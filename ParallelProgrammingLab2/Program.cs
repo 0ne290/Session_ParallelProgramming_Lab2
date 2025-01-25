@@ -1,187 +1,43 @@
-﻿using System.Diagnostics;
-using System.Text;
-using Bogus;
-using Bogus.DataSets;
-using Newtonsoft.Json;
+﻿using ParallelProgrammingLab2.PetriNet;
 
 namespace ParallelProgrammingLab2;
 
 internal static class Program
 {
-    private static int Main()
+    private static void Main()
     {
-        try
-        {
-            /*Console.WriteLine(
-                $"Важное примечание про пулы потоков: Для них помимо, собственно, кол-ва параллельных потоков нужно еще" +
-                $" вводить и кол-во задач. В случае с текущей реализацией прохода по массиву, задача - проход по всем" +
-                $" записям телефонного справочника. Эта задача диктуется содержимым метода" +
-                $" Phonebook.GetSubscribersByLastName(). Если взглянуть на этот метод, то становится ясно, что выход из" +
-                $" него (т. е. завершение задачи) происходит только после полного прохода по всем записям. Таким образом," +
-                $" отработка 4 таких задач пулом потоков с 2 потоками будет происходить так: все 4 задачи встанут в" +
-                $" очередь; пул направит 2 из них на обработку двумя своими потоками; задачи будут выполняться параллельно" +
-                $" до того момента, как все записи не будут пройдены (таким образом, конечное время прохода по записям" +
-                $" будет в два раза меньше в сравнении с однопоточным проходом). На этот момент имеем следующую ситуацию:" +
-                $" 2 задачи уже выполнены и еще 2 задачи стоят в очереди, но проход по записям уже полностью завершен" +
-                $" двумя этими выполненными задачами; пул ставит на обработку оставшиеся 2 задачи, но они сразу же" +
-                $" завершаются, т. к. проход по записям уже завершен.{Environment.NewLine}");*/
-            
-            Console.WriteLine($"Файл \"Input.txt\" содержит сериализованные записи телефонного справочника. Файл \"Parameters.json\" содержит все остальные входные параметры.{Environment.NewLine}");
-
-            Console.Write("Сгенерировать файл \"Input.txt\" (любая непустая последовательность, если да)? ");
-            if (!string.IsNullOrWhiteSpace(Console.ReadLine()))
-            {
-                Console.Write(
-                    "Сколько записей генерировать (если введете не натуральное число или вовсе не число, то сгенерируется 5 000 000 записей)? ");
-                if (!(int.TryParse(Console.ReadLine(), out var numberOfRandomTelephoneSubscribers) &&
-                      numberOfRandomTelephoneSubscribers > 0))
-                    numberOfRandomTelephoneSubscribers = 5_000_000;
-
-                Console.WriteLine("Файл генерируется. Пожалуйста, подождите...");
-                WriteRandomTelephoneSubscribersToFile("../../../Input.txt", numberOfRandomTelephoneSubscribers);
-                Console.WriteLine("Файл сгенерирован.");
-            }
-
-            Console.Write(
-                "Перед тем, как начнется выполнение основной части программы, у Вас есть возможность внести изменения " +
-                "в файлы \"Input.txt\" и \"Parameters.json\" - воспользуйтесь ею сейчас, если хотите. Для продолжения нажмите любую клавишу... ");
-            Console.ReadKey();
-            Console.WriteLine($"{Environment.NewLine}Выполняется обход массива записей телефонного справочника. Пожалуйста, подождите...");
-            
-            var input = JsonConvert.DeserializeObject<InputData>(File.ReadAllText("../../../Parameters.json"));
-            
-            if (input == null)
-                throw new Exception(
-                    "Невозможно прочитать данные из файла конфигурации. Вероятно, данные не соответствуют формату.");
-            if (input.Handler is < 1 or > 3 || input.Synchronizer is < 1 or > 3 || input.PauseTime < 1)
-                throw new Exception("Значение одного из входных параметров некорректно.");
-            if (input.ThreadsNumber < 1)
-                input.ThreadsNumber = Environment.ProcessorCount;
-
-            ISynchronizationPrimitive synchronizationPrimitive = input.Synchronizer switch
-            {
-                1 => new CriticalSection(),
-                2 => new BinarySemaphore(),
-                3 => new PetriNet.BinarySemaphore(),
-                _ => throw new Exception(
-                    "Примитива синхронизации под таким номером не существует. Этой ошибки не должно быть.")
-            };
-
-            var reader = new InputFileReader();
-            var multithreadPhonebookDecorator =
-                new MultithreadPhonebookDecorator(new Phonebook(synchronizationPrimitive,
-                    reader.Read("../../../Input.txt", Encoding.UTF8), input.PauseTime));
-
-            var stopwatch = new Stopwatch();
-            var writer = new StreamWriter("../../../Output.txt", false, Encoding.UTF8);
-            IEnumerable<TelephoneSubscriber> subscribers = null!;
-
-            switch (input.Handler)
-            {
-                case 1:
-                    stopwatch.Start();
-                    subscribers = multithreadPhonebookDecorator.GetSubscribersByLastNameUsingThreadArray(input.Surnames, 1);
-                    writer.WriteLine($"Massive. 1 thread. Time: {stopwatch.ElapsedMilliseconds}; Result:");
-
-                    foreach (var subscriber in subscribers)
-                        writer.WriteLine(
-                            $"FirstName: {subscriber.FirstName}; LastName: {subscriber.LastName}; PhonuNumber: {subscriber.PhoneNumber}; Address: {subscriber.Address}");
-
-                    stopwatch.Restart();
-                    subscribers =
-                        multithreadPhonebookDecorator.GetSubscribersByLastNameUsingThreadArray(input.Surnames, input.ThreadsNumber);
-                    writer.WriteLine(
-                        $"{Environment.NewLine}Massive. {input.ThreadsNumber} threads. Time: {stopwatch.ElapsedMilliseconds}; Result:");
-                    break;
-                case 2:
-                    ThreadPool.SetMinThreads(input.ThreadsNumber, input.ThreadsNumber);
-
-                    stopwatch.Start();
-                    subscribers =
-                        multithreadPhonebookDecorator.GetSubscribersByLastNameUsingSystemThreadPool(input.Surnames, 1);
-                    writer.WriteLine(
-                        $"System ThreadPool. 1 thread. Time: {stopwatch.ElapsedMilliseconds}; Result:");
-
-                    foreach (var subscriber in subscribers)
-                        writer.WriteLine(
-                            $"FirstName: {subscriber.FirstName}; LastName: {subscriber.LastName}; PhonuNumber: {subscriber.PhoneNumber}; Address: {subscriber.Address}");
-
-                    stopwatch.Restart();
-                    subscribers =
-                        multithreadPhonebookDecorator.GetSubscribersByLastNameUsingSystemThreadPool(input.Surnames,
-                            input.ThreadsNumber);
-                    writer.WriteLine(
-                        $"{Environment.NewLine}System ThreadPool. {input.ThreadsNumber} threads. Time: {stopwatch.ElapsedMilliseconds}; Result:");
-                    break;
-                case 3:
-                    var threadPool = new PetriNet.ThreadPool.ThreadPool(input.ThreadsNumber);
-
-                    stopwatch.Start();
-                    subscribers =
-                        multithreadPhonebookDecorator.GetSubscribersByLastNameUsingCustomThreadPool(input.Surnames, 1,
-                            threadPool);
-                    writer.WriteLine(
-                        $"Custom ThreadPool. 1 thread. Time: {stopwatch.ElapsedMilliseconds}; Result:");
-
-                    foreach (var subscriber in subscribers)
-                        writer.WriteLine(
-                            $"FirstName: {subscriber.FirstName}; LastName: {subscriber.LastName}; PhonuNumber: {subscriber.PhoneNumber}; Address: {subscriber.Address}");
-
-                    stopwatch.Restart();
-                    subscribers =
-                        multithreadPhonebookDecorator.GetSubscribersByLastNameUsingCustomThreadPool(input.Surnames,
-                            input.ThreadsNumber,
-                            threadPool);
-                    writer.WriteLine(
-                        $"{Environment.NewLine}Custom ThreadPool. {input.ThreadsNumber} threads. Time: {stopwatch.ElapsedMilliseconds}; Result:");
-
-                    threadPool.Dispose();
-                    break;
-            }
-
-            foreach (var subscriber in subscribers)
-                writer.WriteLine(
-                    $"FirstName: {subscriber.FirstName}; LastName: {subscriber.LastName}; PhonuNumber: {subscriber.PhoneNumber}; Address: {subscriber.Address}");
-
-            writer.Dispose();
-            if (synchronizationPrimitive is IDisposable disposableSynchronizationPrimitive)
-                disposableSynchronizationPrimitive.Dispose();
-            
-            Console.Write("Обход успешно завершен. Нажмите любую клавишу для завершения программы...");
-            Console.ReadKey();
-
-            return 0;
-        }
-        catch (Exception e)
-        {
-            Console.Write($"Ошибка. {e.Message} Нажмите любую клавишу для завершения программы...");
-            Console.ReadKey();
-
-            return 1;
-        }
-    }
-    
-    private static void WriteRandomTelephoneSubscribersToFile(string path, int numberOfRandomTelephoneSubscribers)
-    {
-        var faker = new Faker("ru");
-
-        var writer = new StreamWriter(path, false, Encoding.UTF8);
-
-        for (var i = 0; i < numberOfRandomTelephoneSubscribers - 1; i++)
-        {
-            writer.Write($"{faker.Name.FirstName(Name.Gender.Male)}; ");
-            writer.Write($"{faker.Name.LastName(Name.Gender.Male)}; ");
-            writer.Write($"{faker.Phone.PhoneNumber("+7 (###) ###-##-##")}; ");
-            writer.WriteLine(
-                $"{faker.Address.ZipCode()}, г. {faker.Address.City()}, {faker.Address.StreetAddress()}, кв. {faker.Random.Int(1, 100)}");
-        }
+        Console.WriteLine("X          Y        X | Y");
         
-        writer.Write($"{faker.Name.FirstName(Name.Gender.Male)}; ");
-        writer.Write($"{faker.Name.LastName(Name.Gender.Male)}; ");
-        writer.Write($"{faker.Phone.PhoneNumber("+7 (###) ###-##-##")}; ");
-        writer.Write(
-            $"{faker.Address.ZipCode()}, г. {faker.Address.City()}, {faker.Address.StreetAddress()}, кв. {faker.Random.Int(1, 100)}");
+        Console.WriteLine($"0          0          {(ExecuteSchaeffersStroke(false, false) ? 1 : 0)}");
+        
+        Console.WriteLine($"0          1          {(ExecuteSchaeffersStroke(false, true) ? 1 : 0)}");
+        
+        Console.WriteLine($"1          0          {(ExecuteSchaeffersStroke(true, false) ? 1 : 0)}");
+        
+        Console.WriteLine($"1          1          {(ExecuteSchaeffersStroke(true, true) ? 1 : 0)}");
+        
+        Console.Write($"{Environment.NewLine}To terminate the program, press any key...");
+        Console.ReadKey();
+    }
 
-        writer.Dispose();
+    // Как написано в УМП, если у сети Петри есть несколько готовых к исполнению переходов, то невозможно предсказать
+    // какой именно переход выполнится в тот или иной момент. Это значит, что сеть Петри - это система, "живущая своей
+    // жизнью". Как можно программно смоделировать такую систему? Конечно же с помощью отдельно выделенных под сеть
+    // Петри потоков - по одному на каждый переход в сети. Задача этих потоков одна - запускать в цикле свои переходы
+    // до тех пор, пока сеть Петри запущена. Поэтому-то у класса штриха Шеффера и существуют методы Start
+    // и Stop, которые запускают и останавливают сеть Петри, моделирующую штрих Шеффера. Соответственно, чтобы получить
+    // результат от такой сети, нужно сперва ее запустить, подождать некоторое время, чтобы все переходы, которые могут
+    // выполниться, выполнились, остановить ее и только потом получать результат.
+    private static bool ExecuteSchaeffersStroke(bool arg1, bool arg2)
+    {
+        var schaeffersStroke = new SchaeffersStroke(arg1, arg2);
+
+        schaeffersStroke.Start();
+
+        Thread.Sleep(1_000);
+
+        schaeffersStroke.Stop();
+
+        return schaeffersStroke.Result;
     }
 }
