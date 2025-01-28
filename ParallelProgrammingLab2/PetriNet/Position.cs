@@ -8,19 +8,20 @@ public class Position
             throw new Exception("Tokens count in a position cannot be less than 0.");
 
         Tokens = tokens;
+        _initialTokens = tokens;
     }
 
     public void Reset()
     {
-        Tokens = 0;
+        Tokens = _initialTokens;
     }
 
-    public void Load(int tokens)
+    public void Load(int tokens = 1)
     {
         Tokens += tokens;
     }
 
-    public void Unload(int tokens)
+    public void Unload(int tokens = 1)
     {
         if (Tokens < tokens)
             throw new Exception("Tokens count in a position cannot be less than 0.");
@@ -29,4 +30,6 @@ public class Position
     }
 
     public int Tokens { get; private set; }
+
+    private readonly int _initialTokens;
 }

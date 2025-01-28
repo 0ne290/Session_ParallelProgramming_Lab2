@@ -11,87 +11,136 @@ namespace ParallelProgrammingLab2.PetriNet;
 // за позициями.
 public class SchaeffersStroke
 {
-    public SchaeffersStroke(bool arg1, bool arg2)
+    public SchaeffersStroke()
     {
-        var arg1Position = new Position(arg1 ? 1 : 0);
-        var arg2Position = new Position(arg2 ? 1 : 0);
-        _resultPosition = new Position(1);
+        _begin = new Position(1);
+        _operand1 = new Position();
+        _operand2 = new Position();
+        _result = new Position(1);
 
-        var transition1 = new Transition([arg1Position, arg2Position], [_resultPosition], (inputPositions, outputPositions) =>
+        var transitions = new Transition[4];
+        transitions[0] = new Transition([_begin], [_operand1], (input, output) =>
         {
-            if (inputPositions[0].Tokens < 1 || inputPositions[1].Tokens < 1)
-                return;
-            
-            outputPositions[0].Load(2);
-            inputPositions[0].Unload(1);
-            inputPositions[1].Unload(1);
-        });
-        var transition2 = new Transition([_resultPosition], [], (inputPositions, _) =>
-        {
-            if (inputPositions[0].Tokens > 2)
-                inputPositions[0].Unload(3);
-        });
-
-        _executeTransition1 = () =>
-        {
-            while (_petriNetIsWorked)
+            if (input[0].Tokens == 1)
             {
-                lock (this)
-                {
-                    transition1.Execute();
-                }
-
-                Thread.Yield();
+                input[0].Unload();
+                
+                output[0].Load();
+                
+                Log();
             }
-        };
-        _executeTransition2 = () =>
+        });
+        transitions[1] = new Transition([_operand1, _result], [_operand2, _result], (input, output) =>
         {
-            while (_petriNetIsWorked)
+            if (input[0].Tokens == 1 && input[1].Tokens == 1)
             {
-                lock (this)
-                {
-                    transition2.Execute();
-                }
-
-                Thread.Yield();
+                input[0].Unload();
+                input[1].Unload();
+                
+                output[0].Load();
+                output[1].Load();
+                
+                Log();
             }
-        };
+        });
+        transitions[2] = new Transition([_operand2, _result], [_operand1, _operand2], (input, output) =>
+        {
+            if (input[0].Tokens == 1 && input[1].Tokens == 1)
+            {
+                input[0].Unload();
+                input[1].Unload();
+                
+                output[0].Load();
+                output[1].Load();
+                
+                Log();
+            }
+        });
+        transitions[3] = new Transition([_operand1, _operand2], [_begin, _result], (input, output) =>
+        {
+            if (input[0].Tokens == 1 && input[1].Tokens == 1)
+            {
+                input[0].Unload();
+                input[1].Unload();
+                
+                output[0].Load();
+                output[1].Load();
+                
+                _petriNetIsWorked = false;
+            }
+        });
+
+        _threads = new Thread[4];
+        _handlers = new ThreadStart[4];
+        for (var i = 0; i < 4; i++)
+        {
+            var j = i;
+            _handlers[i] = () =>
+            {
+                while (true)
+                {
+                    lock (this)
+                    {
+                        if (_petriNetIsWorked)
+                            transitions[j].Execute();
+                        else
+                            break;
+                    }
+
+                    Thread.Yield();
+                }
+            };
+        }
 
         _petriNetIsWorked = false;
-        _thread1 = null!;
-        _thread2 = null!;
     }
 
-    public void Start()
+    private void Log() => Console.WriteLine($"{_operand1.Tokens}          {_operand2.Tokens}          {_result.Tokens}");
+
+    public void Execute()
     {
-        _petriNetIsWorked = true;
+        Console.WriteLine("X          Y        X | Y");
+        Log();
         
-        _thread1 = new Thread(_executeTransition1);
-        _thread2 = new Thread(_executeTransition2);
-
-        _thread1.Start();
-        _thread2.Start();
+        Start();
+        
+        for (var i = 0; i < 4; i++)
+            _threads[i].Join();
     }
 
-    public void Stop()
+    private void Start()
     {
-        _petriNetIsWorked = false;
+        _begin.Reset();
+        _operand1.Reset();
+        _operand2.Reset();
+        _result.Reset();
 
-        _thread1.Join();
-        _thread2.Join();
+        _petriNetIsWorked = true;
+
+        for (var i = 0; i < 4; i++)
+            _threads[i] = new Thread(_handlers[i]);
+
+        for (var i = 0; i < 4; i++)
+            _threads[i].Start();
     }
 
-    public bool Result => _resultPosition.Tokens > 0;
+    private readonly Position _begin;
+
+    private readonly Position _operand1;
+
+    private readonly Position _operand2;
+
+    private readonly Position _result;
+
+    // Как написано в УМП, если у сети Петри есть несколько готовых к исполнению переходов, то невозможно предсказать
+    // какой именно переход выполнится в тот или иной момент. Это значит, что сеть Петри - это система, "живущая своей
+    // жизнью". Как можно программно смоделировать такую систему? Конечно же с помощью отдельно выделенных под сеть
+    // Петри потоков - по одному на каждый переход в сети. Задача этих потоков одна - запускать в цикле свои переходы
+    // до тех пор, пока сеть Петри запущена. Поэтому-то у класса штриха Шеффера и существуют методы Start
+    // и Stop, которые запускают и останавливают сеть Петри, моделирующую штрих Шеффера.
+    private readonly Thread[] _threads;
+
+    private readonly ThreadStart[] _handlers;
     
     private bool _petriNetIsWorked;
-
-    private Thread _thread1;
-    
-    private Thread _thread2;
-
-    private readonly Position _resultPosition;
-
-    private readonly ThreadStart _executeTransition1;
-    
-    private readonly ThreadStart _executeTransition2;
 }
