@@ -65,7 +65,7 @@ public class SchaeffersStroke
                 
                 output[0].Load();
                 output[1].Load();
-                
+
                 _petriNetIsWorked = false;
             }
         });
@@ -115,6 +115,7 @@ public class SchaeffersStroke
         _operand2.Reset();
         _result.Reset();
 
+        // ReSharper disable once InconsistentlySynchronizedField
         _petriNetIsWorked = true;
 
         for (var i = 0; i < 4; i++)
@@ -136,8 +137,7 @@ public class SchaeffersStroke
     // какой именно переход выполнится в тот или иной момент. Это значит, что сеть Петри - это система, "живущая своей
     // жизнью". Как можно программно смоделировать такую систему? Конечно же с помощью отдельно выделенных под сеть
     // Петри потоков - по одному на каждый переход в сети. Задача этих потоков одна - запускать в цикле свои переходы
-    // до тех пор, пока сеть Петри запущена. Поэтому-то у класса штриха Шеффера и существуют методы Start
-    // и Stop, которые запускают и останавливают сеть Петри, моделирующую штрих Шеффера.
+    // до тех пор, пока сеть Петри запущена.
     private readonly Thread[] _threads;
 
     private readonly ThreadStart[] _handlers;
